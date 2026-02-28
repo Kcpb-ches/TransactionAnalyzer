@@ -1,1 +1,2 @@
 # TransactionAnalyzer
+提供金融調閱平台調回來的交易明細資料可以初步判斷資金流向
