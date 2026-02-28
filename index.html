@@ -353,6 +353,14 @@
                     <div id="chartOutSum" class="chart-box"></div>
                 </div>
             </div>
+
+            <!-- 桑基圖區塊 (大視覺面板) -->
+            <div class="panel" style="margin-top: 24px;">
+                <h3 style="margin-top:0;">🌊 帳戶資金總流向 (Sankey Diagram) <span
+                        style="font-size: 0.7em; color: var(--text-muted); font-weight: normal;">資金由左(匯入) ➔ 流經本專戶 ➔
+                        流向右(匯出)</span></h3>
+                <div id="sankeyChart" style="width: 100%; height: 750px; margin-top: 15px;"></div>
+            </div>
         </div>
     </div>
 
@@ -882,19 +890,19 @@
 
 
             // 將物件轉為陣列方便排序與切片
-            // 排除掉沒有對手帳號 (Unknown 或空字串) 的情況
-            const arr = Object.keys(stats)
-                .map(k => ({ account: k, ...stats[k] }))
-                .filter(x => x.account !== 'Unknown' && x.account.trim() !== '');
+            const allArr = Object.keys(stats).map(k => ({ account: k, ...stats[k] }));
+
+            // 排除掉沒有對手帳號 (Unknown 或空字串) 的情況供 Top 5 長條圖使用
+            const cleanArr = allArr.filter(x => x.account !== 'Unknown' && x.account.trim() !== '');
 
             // 存入次數 Top 5
-            const topInFreq = [...arr].filter(x => x.inCount > 0).sort((a, b) => b.inCount - a.inCount).slice(0, 5);
+            const topInFreq = [...cleanArr].filter(x => x.inCount > 0).sort((a, b) => b.inCount - a.inCount).slice(0, 5);
             // 轉出次數 Top 5
-            const topOutFreq = [...arr].filter(x => x.outCount > 0).sort((a, b) => b.outCount - a.outCount).slice(0, 5);
+            const topOutFreq = [...cleanArr].filter(x => x.outCount > 0).sort((a, b) => b.outCount - a.outCount).slice(0, 5);
             // 存入金額 Top 5
-            const topInSum = [...arr].filter(x => x.inSum > 0).sort((a, b) => b.inSum - a.inSum).slice(0, 5);
+            const topInSum = [...cleanArr].filter(x => x.inSum > 0).sort((a, b) => b.inSum - a.inSum).slice(0, 5);
             // 轉出金額 Top 5
-            const topOutSum = [...arr].filter(x => x.outSum > 0).sort((a, b) => b.outSum - a.outSum).slice(0, 5);
+            const topOutSum = [...cleanArr].filter(x => x.outSum > 0).sort((a, b) => b.outSum - a.outSum).slice(0, 5);
 
             // 輔助查詢戶名與銀行名稱並生成 X 軸 Label
             async function getAccountLabels(topArray) {
@@ -940,6 +948,89 @@
             renderBarChart('chartOutFreq', '轉出次數', labelOutFreq, topOutFreq.map(x => x.outCount), '#f85149');
             renderBarChart('chartInSum', '總存入金額', labelInSum, topInSum.map(x => x.inSum), '#58a6ff');
             renderBarChart('chartOutSum', '總轉出金額', labelOutSum, topOutSum.map(x => x.outSum), '#bc8cff');
+
+            // --- 新增：渲染桑基圖 (Sankey Diagram) ---
+            const mainAccRecord = await db.accounts.get(accSelect);
+            const mainAccName = mainAccRecord && mainAccRecord['戶名'] ? String(mainAccRecord['戶名']).trim() : '分析帳戶';
+            // 將主帳戶設計在中央，作為資金匯集的樞紐
+            const sankeyMainNode = `[本帳戶] ${mainAccName}\n(${accSelect})`;
+
+            let sankeyNodes = [{ name: sankeyMainNode }];
+            let sankeyLinks = [];
+            let addedNodes = new Set([sankeyMainNode]);
+
+            // 取出所有交易對手名稱，供節點使用
+            const allLabelsForSankey = await getAccountLabels(allArr);
+
+            // 為了避免節點過多造成畫面細碎與不對稱，僅保留左右兩側各 Top 15 金額最大的明確對象，其餘與 Unknown 加總
+            const topInAccounts = new Set([...allArr].filter(x => x.account !== 'Unknown' && x.account.trim() !== '' && x.inSum > 0).sort((a, b) => b.inSum - a.inSum).slice(0, 15).map(x => x.account));
+            const topOutAccounts = new Set([...allArr].filter(x => x.account !== 'Unknown' && x.account.trim() !== '' && x.outSum > 0).sort((a, b) => b.outSum - a.outSum).slice(0, 15).map(x => x.account));
+
+            let sankeyInOtherSum = 0;
+            let sankeyOutOtherSum = 0;
+            const OTHER_IN_NODE = `[來源] 其他零散或無名交易`;
+            const OTHER_OUT_NODE = `[去向] 其他零散或無名交易`;
+
+            allArr.forEach((x, idx) => {
+                const label = allLabelsForSankey[idx].replace(/\n/g, ' ');
+
+                // 左側：匯入來源
+                if (x.inSum > 0) {
+                    if (topInAccounts.has(x.account)) {
+                        const sourceNode = `[來源] ${label}`;
+                        if (!addedNodes.has(sourceNode)) {
+                            sankeyNodes.push({ name: sourceNode });
+                            addedNodes.add(sourceNode);
+                        }
+                        sankeyLinks.push({
+                            source: sourceNode,
+                            target: sankeyMainNode,
+                            value: x.inSum
+                        });
+                    } else {
+                        sankeyInOtherSum += x.inSum;
+                    }
+                }
+
+                // 右側：匯出去向
+                if (x.outSum > 0) {
+                    if (topOutAccounts.has(x.account)) {
+                        const targetNode = `[去向] ${label}`;
+                        if (!addedNodes.has(targetNode)) {
+                            sankeyNodes.push({ name: targetNode });
+                            addedNodes.add(targetNode);
+                        }
+                        sankeyLinks.push({
+                            source: sankeyMainNode,
+                            target: targetNode,
+                            value: x.outSum
+                        });
+                    } else {
+                        sankeyOutOtherSum += x.outSum;
+                    }
+                }
+            });
+
+            if (sankeyInOtherSum > 0) {
+                if (!addedNodes.has(OTHER_IN_NODE)) {
+                    sankeyNodes.push({ name: OTHER_IN_NODE, itemStyle: { color: '#484f58' } });
+                    addedNodes.add(OTHER_IN_NODE);
+                }
+                sankeyLinks.push({ source: OTHER_IN_NODE, target: sankeyMainNode, value: sankeyInOtherSum });
+            }
+
+            if (sankeyOutOtherSum > 0) {
+                if (!addedNodes.has(OTHER_OUT_NODE)) {
+                    sankeyNodes.push({ name: OTHER_OUT_NODE, itemStyle: { color: '#484f58' } });
+                    addedNodes.add(OTHER_OUT_NODE);
+                }
+                sankeyLinks.push({ source: sankeyMainNode, target: OTHER_OUT_NODE, value: sankeyOutOtherSum });
+            }
+
+            // 按照金額由大到小排序連接，讓 ECharts 畫出來更美觀不打結
+            sankeyLinks.sort((a, b) => b.value - a.value);
+
+            renderSankeyChart('sankeyChart', sankeyNodes, sankeyLinks);
         });
 
         const charts = {};
@@ -987,6 +1078,66 @@
                 ]
             };
             charts[domId].setOption(option);
+        }
+
+        function renderSankeyChart(domId, nodes, links) {
+            if (!charts[domId]) {
+                charts[domId] = echarts.init(document.getElementById(domId), 'dark');
+            }
+            if (nodes.length <= 1) {
+                charts[domId].clear();
+                return;
+            }
+
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'item',
+                    triggerOn: 'mousemove',
+                    formatter: function (params) {
+                        if (params.dataType === 'edge') {
+                            return `${params.data.source} ➔ ${params.data.target}<br/>總金額：$${params.data.value.toLocaleString()}`;
+                        }
+                        return `${params.name}`;
+                    }
+                },
+                series: [
+                    {
+                        type: 'sankey',
+                        layout: 'none',
+                        data: nodes,
+                        links: links,
+                        emphasis: {
+                            focus: 'adjacency'
+                        },
+                        nodeAlign: 'justify',
+                        lineStyle: {
+                            color: 'source',
+                            curveness: 0.5,
+                            opacity: 0.35
+                        },
+                        label: {
+                            color: '#e6edf3',
+                            fontSize: 12,
+                            formatter: function (params) {
+                                // 突顯中央主帳戶節點
+                                if (params.name.startsWith('[本帳戶]')) {
+                                    return '{main|' + params.name + '}';
+                                }
+                                return params.name;
+                            },
+                            rich: {
+                                main: {
+                                    fontSize: 16,
+                                    fontWeight: 'bold',
+                                    fill: '#79c0ff'
+                                }
+                            }
+                        }
+                    }
+                ]
+            };
+            charts[domId].setOption(option, true);
         }
 
         // 監聽視窗縮放以自適應大小
