@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交易明細關聯分析系統</title>
+    <!-- 引入 PapaParse 用於 CSV 解析 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- 引入 Dexie 用於簡易操作 IndexedDB 瀏覽器資料庫 -->
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <!-- 引入 ECharts 用於強大圖表與關聯圖視覺化 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: rgba(22, 27, 34, 0.7);
+            --border-color: #30363d;
+            --text-main: #c9d1d9;
+            --text-muted: #8b949e;
+            --primary: #58a6ff;
+            --primary-hover: #3182ce;
+            --danger: #f85149;
+            --success: #3fb950;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            background-image: radial-gradient(circle at 80% 20%, rgba(88, 166, 255, 0.15), transparent 400px),
+                radial-gradient(circle at 20% 80%, rgba(138, 43, 226, 0.15), transparent 400px);
+            background-attachment: fixed;
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #ffffff;
+            letter-spacing: 0.5px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-top: 20px;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 1.1em;
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 28px;
+            margin-bottom: 24px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .panel:hover {
+            box-shadow: 0 16px 50px rgba(0, 0, 0, 0.5);
+            border-color: rgba(88, 166, 255, 0.3);
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 2px dashed rgb(88, 166, 255);
+            background: rgba(88, 166, 255, 0.05);
+            border-radius: 12px;
+            padding: 50px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upload-area:hover,
+        .upload-area.dragover {
+            background: rgba(88, 166, 255, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .upload-area input {
+            display: none;
+        }
+
+        /* Controls */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-top: 24px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 10px;
+            font-size: 0.95em;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        select,
+        input {
+            width: 100%;
+            padding: 12px;
+            background: rgba(13, 17, 23, 0.9);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            border-radius: 8px;
+            outline: none;
+            font-size: 1rem;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+
+        select:focus,
+        input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
+        }
+
+        button {
+            background: linear-gradient(135deg, var(--primary), #4784cc);
+            color: #fff;
+            border: none;
+            padding: 14px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            transition: all 0.2s;
+            width: 100%;
+            box-shadow: 0 4px 12px rgba(88, 166, 255, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(88, 166, 255, 0.4);
+        }
+
+        .btn-secondary {
+            background: #21262d;
+            border: 1px solid var(--border-color);
+            box-shadow: none;
+        }
+
+        .btn-secondary:hover {
+            background: #30363d;
+            box-shadow: none;
+        }
+
+        /* Dashboard */
+        #dashboard {
+            display: none;
+            animation: slideUpFade 0.6s ease-out forwards;
+        }
+
+        .charts-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .chart-box {
+            height: 450px;
+            width: 100%;
+            margin-top: 15px;
+        }
+
+        .graph-box {
+            height: 700px;
+            width: 100%;
+            margin-top: 15px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.2);
+        }
+
+        @keyframes slideUpFade {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 960px) {
+            .charts-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .stat-card-group {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            flex: 1;
+            background: rgba(13, 17, 23, 0.6);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: var(--primary);
+            margin: 10px 0 5px;
+        }
+
+        .stat-card .label {
+            color: var(--text-muted);
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>📊 交易明細與帳戶關聯分析系統</h1>
+            <p>快速匯入 CSV 檔案，自動視覺化您的交易網絡與對手統計數據</p>
+        </div>
+
+        <!-- 步驟 1: 上傳區塊 -->
+        <div class="panel" id="uploadPanel">
+            <div class="upload-area" id="dropzone">
+                <h2 style="margin-bottom: 10px;">📥 點擊或拖曳多個 CSV/Excel 檔案至此 (開戶資料、字典與交易明細)</h2>
+                <p style="color: var(--text-muted); font-size: 0.95em;">請同時選取您的「開戶資料」、「已知帳戶字典」與「交易明細」檔案。</p>
+                <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" multiple />
+            </div>
+
+            <!-- 待上傳列表與按鈕 -->
+            <div id="pendingFilesContainer" style="display: none; margin-top: 20px; text-align: center;">
+                <p style="margin-bottom:10px; color:#fff; font-size: 0.95em;">已選取以下檔案，確認後點擊「開始上傳解析」：</p>
+                <ul id="pendingFilesList"
+                    style="list-style: none; padding: 0; margin: 0 0 15px 0; color: #bc8cff; font-size: 0.9em; text-align: left; display: inline-block;">
+                </ul>
+                <br>
+                <button id="confirmUploadBtn" style="max-width: 250px;">確認上傳並開始解析</button>
+            </div>
+
+            <div id="fileListPanel" style="display: none; margin-top: 15px;">
+                <p style="margin-bottom:10px; color:var(--text-muted); font-size: 0.9em;">已成功解析的檔案與類型判定結果:</p>
+                <ul id="parsedFilesList" style="list-style: none; padding: 0; margin: 0; color: #fff;"></ul>
+            </div>
+        </div>
+
+        <!-- 分析面板 -->
+        <div class="panel" id="analysisPanel" style="display: none; margin-top: 24px;">
+            <h2 style="margin-top: 0;">📊 帳戶交易行為分析</h2>
+            <div class="controls-grid">
+                <div class="form-group">
+                    <label for="accountSelect">選擇總帳戶</label>
+                    <select id="accountSelect">
+                        <option value="">請載入資料庫...</option>
+                    </select>
+                </div>
+                <div class="form-group" style="display: flex; align-items: flex-end;">
+                    <button id="analyzeBtn">進行分析</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 圖表分析區 -->
+        <div id="dashboard" style="display: none;">
+
+            <!-- 帳戶總收支統計 -->
+            <div class="stat-card-group">
+                <div class="stat-card" style="border-left: 4px solid #8957e5;">
+                    <div class="label">總存入次數</div>
+                    <div class="value" id="totalInCount">0</div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #238636;">
+                    <div class="label">總存入金額</div>
+                    <div class="value" id="totalInSum">0</div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #d2a8ff;">
+                    <div class="label">總轉出次數</div>
+                    <div class="value" id="totalOutCount">0</div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #da3633;">
+                    <div class="label">總轉出金額</div>
+                    <div class="value" id="totalOutSum">0</div>
+                </div>
+            </div>
+
+            <!-- 洗錢防制 (AML) 現金交易統計 -->
+            <div class="stat-card-group">
+                <div class="stat-card" style="border-left: 4px solid #3fb950;">
+                    <div class="label">現金存入次數</div>
+                    <div class="value" id="amlCashInCount">0</div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #58a6ff;">
+                    <div class="label">現金存入總額</div>
+                    <div class="value" id="amlCashInSum">0</div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #f85149;">
+                    <div class="label">現金/ATM 提領次數</div>
+                    <div class="value" id="amlCashOutCount">0</div>
+                </div>
+                <div class="stat-card" style="border-left: 4px solid #bc8cff;">
+                    <div class="label">現金/ATM 提領總額</div>
+                    <div class="value" id="amlCashOutSum">0</div>
+                </div>
+            </div>
+
+            <div class="charts-container">
+                <div class="panel" style="margin-bottom: 0;">
+                    <h3 style="margin-top:0;">📈 存入頻率 Top 5 (次數)</h3>
+                    <div id="chartInFreq" class="chart-box"></div>
+                </div>
+                <div class="panel" style="margin-bottom: 0;">
+                    <h3 style="margin-top:0;">📉 轉出頻率 Top 5 (次數)</h3>
+                    <div id="chartOutFreq" class="chart-box"></div>
+                </div>
+                <div class="panel" style="margin-bottom: 0;">
+                    <h3 style="margin-top:0;">💰 存入總金額 Top 5</h3>
+                    <div id="chartInSum" class="chart-box"></div>
+                </div>
+                <div class="panel" style="margin-bottom: 0;">
+                    <h3 style="margin-top:0;">💸 轉出總金額 Top 5</h3>
+                    <div id="chartOutSum" class="chart-box"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropzone = document.getElementById('dropzone');
+        const fileInput = document.getElementById('fileInput');
+
+        // 初始化 IndexedDB 資料庫
+        const db = new Dexie('TransactionAnalyzerDB');
+        db.version(1).stores({
+            accounts: '帳號, 戶名, 存款種類',
+            transactions: '++id, 帳號'
+        });
+        // 升級資料庫以支援更詳細的搜尋索引
+        db.version(2).stores({
+            accounts: '帳號, 戶名, 存款種類',
+            transactions: '++id, accountA, accountBClean, direction'
+        });
+
+        // 頁面載入時先清空舊的測試資料，以確保每次上傳都是新的練習，
+        // 實務上也可移除這段，讓資料永久保留
+        db.on('ready', async function () {
+            await db.accounts.clear();
+            await db.transactions.clear();
+        });
+
+        let pendingUploadFiles = [];
+
+        // --- File Upload Logic ---
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+        dropzone.addEventListener('dragleave', () => {
+            dropzone.classList.remove('dragover');
+        });
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFileSelection(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) handleFileSelection(e.target.files);
+        });
+
+        function handleFileSelection(files) {
+            const fileArray = Array.from(files);
+            const targetFiles = fileArray.filter(f => f.name.toLowerCase().endsWith('.csv') || f.name.toLowerCase().endsWith('.xlsx') || f.name.toLowerCase().endsWith('.xls'));
+
+            if (targetFiles.length === 0) {
+                alert('請至少選取一個支援的 CSV 或 Excel 檔案！');
+                return;
+            }
+
+            pendingUploadFiles.push(...targetFiles);
+            renderPendingFilesUI();
+        }
+
+        function renderPendingFilesUI() {
+            const container = document.getElementById('pendingFilesContainer');
+            const list = document.getElementById('pendingFilesList');
+            list.innerHTML = '';
+
+            if (pendingUploadFiles.length > 0) {
+                container.style.display = 'block';
+                pendingUploadFiles.forEach((f) => {
+                    const li = document.createElement('li');
+                    li.textContent = `📄 ${f.name}`;
+                    li.style.marginBottom = '6px';
+                    list.appendChild(li);
+                });
+            } else {
+                container.style.display = 'none';
+            }
+        }
+
+        document.getElementById('confirmUploadBtn').addEventListener('click', () => {
+            if (pendingUploadFiles.length === 0) return;
+            document.getElementById('pendingFilesContainer').style.display = 'none';
+            // 執行真正的解析
+            processUploadFiles(pendingUploadFiles);
+            // 清空待處理
+            pendingUploadFiles = [];
+            fileInput.value = '';
+        });
+
+        // 檢查陣列中是否包含特定字串的精確函數 (處理帶空格的標題)
+        function checkHeadersInclude(headersArr, keyword) {
+            return headersArr.some(h => h.replace(/\s+/g, '').includes(keyword));
+        }
+
+        // 常見台灣銀行代碼對照表
+        const TAIWAN_BANKS = {
+            '004': '臺灣銀行', '005': '土地銀行', '006': '合庫商銀', '007': '第一銀行', '008': '華南銀行',
+            '009': '彰化銀行', '011': '上海商銀', '012': '台北富邦', '013': '國泰世華', '016': '高雄銀行',
+            '017': '兆豐商銀', '021': '花旗銀行', '050': '臺灣企銀', '052': '渣打國際', '053': '台中商銀',
+            '054': '京城商銀', '081': '匯豐銀行', '102': '華泰銀行', '103': '新光商銀', '104': '台北九信',
+            '108': '陽信銀行', '114': '基隆一信', '118': '板信商銀', '147': '三信商銀', '803': '聯邦銀行',
+            '804': '遠東商銀', '805': '元大銀行', '806': '元大銀行', '807': '永豐銀行', '808': '玉山銀行',
+            '809': '凱基商業', '810': '星展銀行', '812': '台新銀行', '815': '日盛銀行', '816': '安泰銀行',
+            '822': '中國信託', '700': '中華郵政', '823': '將來銀行', '824': 'LINE Bank', '826': '樂天商銀',
+            '300': '農會信用部'
+        };
+
+        // 輔助函式：將任何帳號字串前補 '0' 直到滿 16 碼
+        function padAccount(accStr) {
+            if (!accStr) return '';
+            // 清理掉全半形空白與連字號等非英數字元，避免長度計算與 padding 失準
+            const str = String(accStr).replace(/[^\w]/g, '').trim();
+            if (str === '') return '';
+            return str.padStart(16, '0');
+        }
+
+        // 輔助函式：清理金額字串為數字
+        function cleanAmount(val) {
+            if (val === null || val === undefined || val === '') return 0;
+            if (typeof val === 'number') return Math.abs(val);
+            const cleaned = String(val).replace(/,/g, '').replace(/[^0-9.-]+/g, "");
+            return Math.abs(parseFloat(cleaned)) || 0;
+        }
+
+        async function processUploadFiles(targetFiles) {
+            // 步驟 1: 平行讀取所有檔案內容並解析為 JSON
+            const parsedResults = await Promise.all(targetFiles.map(file => {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        reader.onload = function (e) {
+                            let csvText = e.target.result;
+                            csvText = csvText.replace(/\r\n|\r|\n/g, '\n');
+                            Papa.parse(csvText, {
+                                header: true,
+                                skipEmptyLines: true,
+                                complete: function (results) {
+                                    resolve({ file, data: results.data });
+                                },
+                                error: function (err) {
+                                    alert('解析檔案 ' + file.name + ' 失敗: ' + err.message);
+                                    resolve(null);
+                                }
+                            });
+                        };
+                        reader.readAsText(file);
+                    } else {
+                        // Excel 讀取路徑
+                        reader.onload = function (e) {
+                            try {
+                                const data = new Uint8Array(e.target.result);
+                                const workbook = XLSX.read(data, { type: 'array' });
+                                const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                                // 設定 raw: false 讓數字強制以 Excel 面板顯示的完整字串輸出，避免超長帳號變為大寫 E 的科學記號
+                                const json = XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
+                                resolve({ file, data: json });
+                            } catch (err) {
+                                alert('解析 Excel ' + file.name + ' 失敗: ' + err.message);
+                                resolve(null);
+                            }
+                        };
+                        reader.readAsArrayBuffer(file);
+                    }
+                });
+            }));
+
+            // 步驟 2: 分類檔案 (清洗欄位並打上類型標籤)
+            const categorizedFiles = [];
+            for (let result of parsedResults) {
+                if (!result || result.data.length === 0) continue;
+
+                const fileHeaders = Object.keys(result.data[0]);
+                let fileCategory = 'Unknown';
+
+                const isAccountFile = checkHeadersInclude(fileHeaders, '存款種類') || checkHeadersInclude(fileHeaders, '開戶日') || checkHeadersInclude(fileHeaders, '結清日');
+                const isTransactionFile = checkHeadersInclude(fileHeaders, '支出金額') || checkHeadersInclude(fileHeaders, '存入金額') || checkHeadersInclude(fileHeaders, '餘額');
+                const isDictionaryFile = checkHeadersInclude(fileHeaders, '帳號') && checkHeadersInclude(fileHeaders, '戶名') && !isAccountFile && !isTransactionFile;
+
+                if (isAccountFile && !isTransactionFile) fileCategory = 'ACCOUNT';
+                else if (isTransactionFile && !isAccountFile) fileCategory = 'TRANSACTION';
+                else if (isDictionaryFile) fileCategory = 'DICTIONARY';
+
+                const cleanedData = result.data.map(row => {
+                    const newRow = {};
+                    for (let key in row) {
+                        let cleanKey = String(key).trim();
+                        if (cleanKey.startsWith('="') && cleanKey.endsWith('"')) {
+                            cleanKey = cleanKey.substring(2, cleanKey.length - 1);
+                        }
+
+                        let cleanVal = row[key];
+                        if (typeof cleanVal === 'string') {
+                            cleanVal = cleanVal.trim();
+                            // 預防 Excel 匯出 CSV 時為了保留前導 0 而加上 `="008"` 的公式格式
+                            if (cleanVal.startsWith('="') && cleanVal.endsWith('"')) {
+                                cleanVal = cleanVal.substring(2, cleanVal.length - 1);
+                            }
+                        }
+                        newRow[cleanKey] = cleanVal;
+                    }
+                    return newRow;
+                });
+
+                categorizedFiles.push({ file: result.file, data: cleanedData, category: fileCategory, headers: fileHeaders });
+            }
+
+            // 步驟 3: 優先處理並寫入「開戶資料」與「自訂對象字典」
+            for (let item of categorizedFiles) {
+                if (item.category === 'ACCOUNT' || item.category === 'DICTIONARY') {
+                    let fileType = item.category === 'ACCOUNT' ? '✅ 開戶資料' : '✅ 自訂對象字典';
+                    let dbStatusMsg = '';
+                    try {
+                        const validDict = item.data
+                            .filter(r => r['帳號'] && String(r['帳號']).trim() !== '')
+                            .map(r => {
+                                // 判斷標題可能為 銀行代碼 或 銀行名稱 或 行庫 等
+                                let bCode = r['銀行代碼'] || r['銀行名稱'] || '';
+                                if (!bCode) {
+                                    for (let k of Object.keys(r)) {
+                                        if (k.replace(/\s/g, '').includes('銀行代碼') || k.replace(/\s/g, '').includes('行庫代碼')) {
+                                            bCode = r[k]; break;
+                                        }
+                                    }
+                                }
+                                return {
+                                    ...r,
+                                    '原始帳號': r['帳號'],
+                                    '帳號': padAccount(r['帳號']),
+                                    '銀行代碼': String(bCode).trim()
+                                };
+                            });
+
+                        // 改用合併(Merge)方式寫入，避免「開戶資料」覆蓋掉「字典」已填寫的姓名與銀行代碼
+                        for (const record of validDict) {
+                            const existing = await db.accounts.get(record['帳號']);
+                            if (existing) {
+                                // 若原本已有銀行代碼，但這次沒有提供，則保留原本的
+                                if (!record['銀行代碼'] && existing['銀行代碼']) {
+                                    record['銀行代碼'] = existing['銀行代碼'];
+                                }
+                                // 若原本已有戶名，但這次沒有提供，則保留原本的
+                                if (!record['戶名'] && existing['戶名']) {
+                                    record['戶名'] = existing['戶名'];
+                                }
+                                await db.accounts.put({ ...existing, ...record });
+                            } else {
+                                await db.accounts.put(record);
+                            }
+                        }
+                        dbStatusMsg = `💾 成功合併匯入並處理 <b>${validDict.length}</b> 筆 <b>accounts</b> 開戶/字典資料`;
+                    } catch (err) {
+                        dbStatusMsg = `❌ 寫入資料庫失敗 (${err.message})`;
+                    }
+                    appendParsedLog(item.file, fileType, item.headers, item.data.length, dbStatusMsg);
+                }
+            }
+
+            // 步驟 4: 接著處理「交易明細」，並透過 IndexedDB 查詢將銀行代碼與戶名直接寫入
+            for (let item of categorizedFiles) {
+                if (item.category === 'TRANSACTION') {
+                    let dbStatusMsg = '';
+                    try {
+                        const validTrans = item.data.filter(r => (r['帳號'] || '') !== '' && (cleanAmount(r['支出金額']) > 0 || cleanAmount(r['存入金額']) > 0));
+
+                        // 使用 Promise.all 確保非同步查表完成
+                        const normalizedTrans = await Promise.all(validTrans.map(async r => {
+                            const sourceAcc = padAccount(r['帳號'] || '');
+                            const rawTarget = String(r['轉出入行庫代碼及帳號'] || r['轉出入行'] || '').trim();
+
+                            let bankCodeB = '';
+                            let targetAccClean = '';
+
+                            if (rawTarget.length > 8) {
+                                bankCodeB = rawTarget.substring(0, 3);
+                                targetAccClean = padAccount(rawTarget.substring(3));
+                            }
+
+                            const expense = cleanAmount(r['支出金額']);
+                            const income = cleanAmount(r['存入金額']);
+                            const amount = expense > 0 ? expense : income;
+                            const direction = expense > 0 ? 'OUT' : 'IN';
+
+                            let bankNameB = '';
+                            let accountNameB = '';
+
+                            let bankNameA = '';
+                            let accountNameA = '';
+
+                            // 針對本方主帳戶進行 Query 以補齊相關中文資訊
+                            if (sourceAcc) {
+                                const matchedSource = await db.accounts.get(sourceAcc);
+                                if (matchedSource) {
+                                    if (matchedSource['戶名']) accountNameA = String(matchedSource['戶名']).trim();
+                                    if (matchedSource['銀行代碼']) {
+                                        let sourceBankCode = String(matchedSource['銀行代碼']).trim();
+                                        if (TAIWAN_BANKS[sourceBankCode]) {
+                                            bankNameA = TAIWAN_BANKS[sourceBankCode];
+                                        } else {
+                                            bankNameA = sourceBankCode;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 針對對手帳戶去資料庫尋找字典
+                            if (targetAccClean) {
+                                const matchedAcc = await db.accounts.get(targetAccClean);
+                                if (matchedAcc) {
+                                    // 抓取字典裡的戶名
+                                    if (matchedAcc['戶名']) accountNameB = String(matchedAcc['戶名']).trim();
+
+                                    // 若字典裡面有填寫明文「銀行代碼」，直接套用覆蓋推測值
+                                    if (matchedAcc['銀行代碼'] && String(matchedAcc['銀行代碼']).trim() !== '') {
+                                        bankCodeB = String(matchedAcc['銀行代碼']).trim();
+                                    }
+                                }
+                            }
+
+                            // 統一進行對手行中文翻譯 (字典來的 code 或前綴 3 碼)
+                            if (bankCodeB) {
+                                if (TAIWAN_BANKS[bankCodeB]) {
+                                    bankNameB = TAIWAN_BANKS[bankCodeB];
+                                } else {
+                                    bankNameB = bankCodeB; // 沒有翻譯就保留原代碼字串
+                                }
+                            }
+
+                            return {
+                                ...r,
+                                accountA: sourceAcc,
+                                bankNameA: bankNameA,
+                                accountNameA: accountNameA,
+                                bankCodeB: bankCodeB,
+                                bankNameB: bankNameB,           // 新增：寫死對手銀行名稱
+                                accountNameB: accountNameB,     // 新增：寫死擷取到的對手戶名
+                                accountBClean: targetAccClean,
+                                rawTargetColumn: rawTarget,
+                                direction: direction,
+                                amount: amount
+                            };
+                        }));
+
+                        await db.transactions.bulkAdd(normalizedTrans);
+                        dbStatusMsg = `💾 成功標準化並寫入 <b>${normalizedTrans.length}</b> 筆附帶代碼關聯之有效交易至 <b>transactions</b>`;
+                    } catch (err) {
+                        dbStatusMsg = `❌ 寫入資料庫失敗 (${err.message})`;
+                    }
+                    appendParsedLog(item.file, '✅ 交易明細', item.headers, item.data.length, dbStatusMsg);
+                } else if (item.category === 'Unknown') {
+                    appendParsedLog(item.file, '⚠️ 未知 / 混合格式', item.headers, item.data.length, '❌ 未寫入資料庫 (格式不匹配)');
+                }
+            }
+
+            // 完成全部解析
+            document.getElementById('fileListPanel').style.display = 'block';
+            document.getElementById('analysisPanel').style.display = 'block';
+            loadAccountOptions();
+        }
+
+        // 獨立出前端印出解析 log 的功能
+        function appendParsedLog(file, fileType, headers, count, dbStatusMsg) {
+            const li = document.createElement('li');
+            li.style.padding = '8px 12px';
+            li.style.marginBottom = '6px';
+            li.style.background = 'rgba(88, 166, 255, 0.1)';
+            li.style.borderRadius = '6px';
+            li.style.borderLeft = (fileType.includes('開戶資料') || fileType.includes('字典')) ? '4px solid #3fb950' : fileType.includes('交易明細') ? '4px solid #58a6ff' : '4px solid #f85149';
+
+            const detectedHeadersText = `<br><span style="font-size: 0.8em; color: var(--text-muted);">欄位範例: ${headers.slice(0, 5).join(', ')}...</span>`;
+            let recordCountMsg = count > 0 ? `<br><span style="font-size: 0.85em;">解析出 ${count} 筆原始資料</span>` : '';
+            li.innerHTML = `📄 <b>${file.name}</b> <span style="font-size: 0.9em; float: right;">系統判定：<b>${fileType}</b></span>${detectedHeadersText}${recordCountMsg}<br><span style="color: #bc8cff; font-size: 0.9em;">${dbStatusMsg}</span>`;
+            document.getElementById('parsedFilesList').appendChild(li);
+        }
+
+        // ==========================
+        // UI & 視覺化分析邏輯
+        // ==========================
+
+        let isLoadingOptions = false;
+        async function loadAccountOptions() {
+            if (isLoadingOptions) return;
+            isLoadingOptions = true;
+            try {
+                // 從 transactions 取得所有主帳戶並強制去除重複
+                let uniqueAccounts = await db.transactions.orderBy('accountA').uniqueKeys();
+                uniqueAccounts = [...new Set(uniqueAccounts)];
+
+                const select = document.getElementById('accountSelect');
+
+                // 為了避免多次非同步載入時 DOM 被交錯寫入，使用 DocumentFragment
+                const fragment = document.createDocumentFragment();
+                const defaultOpt = document.createElement('option');
+                defaultOpt.value = "";
+                defaultOpt.textContent = "請選擇要分析的帳戶...";
+                fragment.appendChild(defaultOpt);
+
+                const optionsData = [];
+
+                for (const acc of uniqueAccounts) {
+                    const accRecord = await db.accounts.get(acc);
+
+                    // 若開戶資料有「結清日」且不為空值，代表該帳戶已被結清，則不列入後續分析
+                    if (accRecord && accRecord['結清日'] && String(accRecord['結清日']).trim() !== '') {
+                        continue;
+                    }
+
+                    const accName = accRecord && accRecord['戶名'] ? String(accRecord['戶名']).trim() : '未知戶名';
+                    // 根據使用者要求，完全以匯入清單的銀行代碼為準，不自行裁切前三碼
+                    let accBankCode = accRecord && accRecord['銀行代碼'] ? String(accRecord['銀行代碼']).trim() : '';
+
+                    if (accBankCode) {
+                        if (TAIWAN_BANKS[accBankCode]) {
+                            accBankCode = `${TAIWAN_BANKS[accBankCode]}(${accBankCode})`;
+                        }
+                    }
+
+                    optionsData.push({
+                        value: acc,
+                        name: accName,
+                        bank: accBankCode
+                    });
+                }
+
+                // 依據戶名進行排序 (Locale Compare 支援中文拼音或筆畫)
+                optionsData.sort((a, b) => a.name.localeCompare(b.name));
+
+                // 產出 Option 元素
+                optionsData.forEach(item => {
+                    const opt = document.createElement('option');
+                    opt.value = item.value;
+                    if (item.bank) {
+                        opt.textContent = `[${item.name} - ${item.bank} - ${item.value}]`;
+                    } else {
+                        opt.textContent = `[${item.name} - ${item.value}]`;
+                    }
+                    fragment.appendChild(opt);
+                });
+
+                // 一次性寫入 DOM
+                select.innerHTML = '';
+                select.appendChild(fragment);
+            } catch (err) {
+                console.error("載入帳戶選單失敗:", err);
+            } finally {
+                isLoadingOptions = false;
+            }
+        }
+
+        document.getElementById('analyzeBtn').addEventListener('click', async () => {
+            const accSelect = document.getElementById('accountSelect').value;
+            if (!accSelect) {
+                alert("請先選擇要分析的總帳戶！");
+                return;
+            }
+
+            document.getElementById('dashboard').style.display = 'block';
+
+            // 撈取所選帳戶的所有交易紀錄
+            const trans = await db.transactions.where('accountA').equals(accSelect).toArray();
+
+            const stats = {};
+            // 帳戶總收支統計
+            let gInCount = 0;
+            let gInSum = 0;
+            let gOutCount = 0;
+            let gOutSum = 0;
+
+            // 防制洗錢 (AML) 現金交易統計
+            let cashInCount = 0;
+            let cashInSum = 0;
+            let cashOutCount = 0;
+            let cashOutSum = 0;
+
+            // Group by accountBClean & 計算總計
+            trans.forEach(t => {
+                const b = t.accountBClean || 'Unknown';
+                if (!stats[b]) {
+                    // 記錄下我們已經在資料庫快取的戶名與銀行名稱
+                    stats[b] = {
+                        inCount: 0, outCount: 0, inSum: 0, outSum: 0,
+                        bankCodeB: t.bankCodeB,
+                        bankNameB: t.bankNameB,
+                        accountNameB: t.accountNameB
+                    };
+                }
+                if (t.direction === 'IN') {
+                    stats[b].inCount += 1;
+                    stats[b].inSum += t.amount;
+                    gInCount += 1;
+                    gInSum += t.amount;
+                } else if (t.direction === 'OUT') {
+                    stats[b].outCount += 1;
+                    stats[b].outSum += t.amount;
+                    gOutCount += 1;
+                    gOutSum += t.amount;
+                }
+
+                // 現金交易特徵統計 (AML)
+                // 擴大特徵字眼，相容不同銀行的「現金」、「提款機」、「ATM」等字眼，但排除「轉」字 (避免 ATM轉帳 誤以為是無法追蹤的實體現金交易)
+                const desc = t['交易摘要'] ? String(t['交易摘要']).trim() : '';
+                const hasCashWord = desc.includes('現金') || desc.includes('ATM') || desc.includes('提款機') || desc.includes('現開戶') || desc.includes('提現');
+                const isTransfer = desc.includes('轉');
+
+                const isCashKeyword = hasCashWord && !isTransfer;
+
+                if (isCashKeyword) {
+                    if (t.direction === 'IN') {
+                        cashInCount += 1;
+                        cashInSum += t.amount;
+                    } else if (t.direction === 'OUT') {
+                        cashOutCount += 1;
+                        cashOutSum += t.amount;
+                    }
+                }
+            });
+
+            // 更新 總收支統計 Cards UI
+            document.getElementById('totalInCount').textContent = gInCount.toLocaleString();
+            document.getElementById('totalInSum').textContent = gInSum.toLocaleString();
+            document.getElementById('totalOutCount').textContent = gOutCount.toLocaleString();
+            document.getElementById('totalOutSum').textContent = gOutSum.toLocaleString();
+
+            // 更新 AML Stat Cards UI
+            document.getElementById('amlCashInCount').textContent = cashInCount.toLocaleString();
+            document.getElementById('amlCashInSum').textContent = "$" + cashInSum.toLocaleString();
+            document.getElementById('amlCashOutCount').textContent = cashOutCount.toLocaleString();
+            document.getElementById('amlCashOutSum').textContent = "$" + cashOutSum.toLocaleString();
+
+
+            // 將物件轉為陣列方便排序與切片
+            // 排除掉沒有對手帳號 (Unknown 或空字串) 的情況
+            const arr = Object.keys(stats)
+                .map(k => ({ account: k, ...stats[k] }))
+                .filter(x => x.account !== 'Unknown' && x.account.trim() !== '');
+
+            // 存入次數 Top 5
+            const topInFreq = [...arr].filter(x => x.inCount > 0).sort((a, b) => b.inCount - a.inCount).slice(0, 5);
+            // 轉出次數 Top 5
+            const topOutFreq = [...arr].filter(x => x.outCount > 0).sort((a, b) => b.outCount - a.outCount).slice(0, 5);
+            // 存入金額 Top 5
+            const topInSum = [...arr].filter(x => x.inSum > 0).sort((a, b) => b.inSum - a.inSum).slice(0, 5);
+            // 轉出金額 Top 5
+            const topOutSum = [...arr].filter(x => x.outSum > 0).sort((a, b) => b.outSum - a.outSum).slice(0, 5);
+
+            // 輔助查詢戶名與銀行名稱並生成 X 軸 Label
+            async function getAccountLabels(topArray) {
+                return Promise.all(topArray.map(async (x) => {
+                    // 1. 若資料庫層級已有預先查好的戶名與銀行，優先使用
+                    let namePart = x.accountNameB || '';
+                    let resolvedBank = x.bankNameB || x.bankCodeB || '';
+
+                    // 下方為相容歷史無快取資料的做法
+                    if (!namePart || !resolvedBank) {
+                        const accRecord = await db.accounts.get(x.account);
+                        if (!resolvedBank) {
+                            resolvedBank = (accRecord && accRecord['銀行代碼']) ? accRecord['銀行代碼'] : '';
+                            if (!resolvedBank && x.bankCode && TAIWAN_BANKS[x.bankCode]) {
+                                resolvedBank = TAIWAN_BANKS[x.bankCode];
+                            }
+                            if (!resolvedBank && x.bankCode) resolvedBank = `銀代:${x.bankCode}`;
+                        }
+                        if (!namePart && accRecord && accRecord['戶名']) {
+                            namePart = accRecord['戶名'];
+                        }
+                    }
+
+                    // 3. 組合輸出
+                    if (namePart && resolvedBank) {
+                        return `[${resolvedBank}] ${namePart}\n(${x.account})`;
+                    } else if (namePart) {
+                        return `${namePart}\n(${x.account})`;
+                    } else if (resolvedBank) {
+                        return `${resolvedBank}\n(${x.account})`;
+                    }
+                    return x.account;
+                }));
+            }
+
+            const labelInFreq = await getAccountLabels(topInFreq);
+            const labelOutFreq = await getAccountLabels(topOutFreq);
+            const labelInSum = await getAccountLabels(topInSum);
+            const labelOutSum = await getAccountLabels(topOutSum);
+
+            // 轉交給 ECharts 渲染函數
+            renderBarChart('chartInFreq', '存入次數', labelInFreq, topInFreq.map(x => x.inCount), '#3fb950');
+            renderBarChart('chartOutFreq', '轉出次數', labelOutFreq, topOutFreq.map(x => x.outCount), '#f85149');
+            renderBarChart('chartInSum', '總存入金額', labelInSum, topInSum.map(x => x.inSum), '#58a6ff');
+            renderBarChart('chartOutSum', '總轉出金額', labelOutSum, topOutSum.map(x => x.outSum), '#bc8cff');
+        });
+
+        const charts = {};
+
+        function renderBarChart(domId, seriesName, xData, yData, color) {
+            if (!charts[domId]) {
+                charts[domId] = echarts.init(document.getElementById(domId), 'dark');
+            }
+            const option = {
+                backgroundColor: 'transparent',
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '15%', // 留白以顯示長帳號
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    data: xData,
+                    axisLabel: {
+                        interval: 0,
+                        rotate: 30,
+                        fontSize: 14,
+                        fontWeight: 'bold'
+                    }
+                },
+                yAxis: {
+                    type: 'value'
+                },
+                series: [
+                    {
+                        name: seriesName,
+                        type: 'bar',
+                        barWidth: '40%',
+                        data: yData,
+                        itemStyle: {
+                            color: color,
+                            borderRadius: [4, 4, 0, 0]
+                        }
+                    }
+                ]
+            };
+            charts[domId].setOption(option);
+        }
+
+        // 監聽視窗縮放以自適應大小
+        window.addEventListener('resize', () => {
+            Object.values(charts).forEach(chart => chart.resize());
+        });
+
+    </script>
+</body>
+
+</html>
