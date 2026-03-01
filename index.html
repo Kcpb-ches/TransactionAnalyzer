@@ -12,6 +12,8 @@
     <!-- 引入 ECharts 用於強大圖表與關聯圖視覺化 -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- 引入 Cytoscape.js 用於極致順暢的本機圖論關聯網路分析 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -241,6 +243,36 @@
             color: var(--text-muted);
             font-size: 0.9em;
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 12px 24px;
+            font-size: 1.1em;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: var(--text-main);
+            background: rgba(88, 166, 255, 0.1);
+        }
+
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
     </style>
 </head>
 
@@ -276,93 +308,185 @@
             </div>
         </div>
 
-        <!-- 分析面板 -->
-        <div class="panel" id="analysisPanel" style="display: none; margin-top: 24px;">
-            <h2 style="margin-top: 0;">📊 帳戶交易行為分析</h2>
-            <div class="controls-grid">
-                <div class="form-group">
-                    <label for="accountSelect">選擇總帳戶</label>
-                    <select id="accountSelect">
-                        <option value="">請載入資料庫...</option>
-                    </select>
-                </div>
-                <div class="form-group" style="display: flex; align-items: flex-end;">
-                    <button id="analyzeBtn">進行分析</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 圖表分析區 -->
-        <div id="dashboard" style="display: none;">
-
-            <!-- 帳戶總收支統計 -->
-            <div class="stat-card-group">
-                <div class="stat-card" style="border-left: 4px solid #8957e5;">
-                    <div class="label">總存入次數</div>
-                    <div class="value" id="totalInCount">0</div>
-                </div>
-                <div class="stat-card" style="border-left: 4px solid #238636;">
-                    <div class="label">總存入金額</div>
-                    <div class="value" id="totalInSum">0</div>
-                </div>
-                <div class="stat-card" style="border-left: 4px solid #d2a8ff;">
-                    <div class="label">總轉出次數</div>
-                    <div class="value" id="totalOutCount">0</div>
-                </div>
-                <div class="stat-card" style="border-left: 4px solid #da3633;">
-                    <div class="label">總轉出金額</div>
-                    <div class="value" id="totalOutSum">0</div>
-                </div>
+        <!-- ====== 全域多功能分析主容器 ====== -->
+        <div id="mainTabsContainer" style="display: none; margin-top: 24px;">
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('single')">👤 單一帳戶深度分析</button>
+                <button class="tab-btn" onclick="switchTab('network')">🕸️ 全域網脈關聯圖</button>
             </div>
 
-            <!-- 洗錢防制 (AML) 現金交易統計 -->
-            <div class="stat-card-group">
-                <div class="stat-card" style="border-left: 4px solid #3fb950;">
-                    <div class="label">現金存入次數</div>
-                    <div class="value" id="amlCashInCount">0</div>
+            <!-- ===== 單一帳戶 Tab ===== -->
+            <div id="tabSingle">
+                <!-- 分析控制面板 -->
+                <div class="panel" id="analysisPanel">
+                    <h2 style="margin-top: 0;">📊 帳戶交易行為分析</h2>
+                    <div class="controls-grid">
+                        <div class="form-group">
+                            <label for="accountSelect">選擇總帳戶</label>
+                            <select id="accountSelect">
+                                <option value="">請載入資料庫...</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="display: flex; align-items: flex-end;">
+                            <button id="analyzeBtn">進行分析</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="stat-card" style="border-left: 4px solid #58a6ff;">
-                    <div class="label">現金存入總額</div>
-                    <div class="value" id="amlCashInSum">0</div>
-                </div>
-                <div class="stat-card" style="border-left: 4px solid #f85149;">
-                    <div class="label">現金/ATM 提領次數</div>
-                    <div class="value" id="amlCashOutCount">0</div>
-                </div>
-                <div class="stat-card" style="border-left: 4px solid #bc8cff;">
-                    <div class="label">現金/ATM 提領總額</div>
-                    <div class="value" id="amlCashOutSum">0</div>
-                </div>
-            </div>
 
-            <div class="charts-container">
-                <div class="panel" style="margin-bottom: 0;">
-                    <h3 style="margin-top:0;">📈 存入頻率 Top 5 (次數)</h3>
-                    <div id="chartInFreq" class="chart-box"></div>
-                </div>
-                <div class="panel" style="margin-bottom: 0;">
-                    <h3 style="margin-top:0;">📉 轉出頻率 Top 5 (次數)</h3>
-                    <div id="chartOutFreq" class="chart-box"></div>
-                </div>
-                <div class="panel" style="margin-bottom: 0;">
-                    <h3 style="margin-top:0;">💰 存入總金額 Top 5</h3>
-                    <div id="chartInSum" class="chart-box"></div>
-                </div>
-                <div class="panel" style="margin-bottom: 0;">
-                    <h3 style="margin-top:0;">💸 轉出總金額 Top 5</h3>
-                    <div id="chartOutSum" class="chart-box"></div>
-                </div>
-            </div>
+                <!-- 圖表分析區 -->
+                <div id="dashboard" style="display: none;">
 
-            <!-- 桑基圖區塊 (大視覺面板) -->
-            <div class="panel" style="margin-top: 24px;">
-                <h3 style="margin-top:0;">🌊 帳戶資金總流向 (Sankey Diagram) <span
-                        style="font-size: 0.7em; color: var(--text-muted); font-weight: normal;">資金由左(匯入) ➔ 流經本專戶 ➔
-                        流向右(匯出)</span></h3>
-                <div id="sankeyChart" style="width: 100%; height: 750px; margin-top: 15px;"></div>
-            </div>
-        </div>
-    </div>
+                    <!-- 帳戶總收支統計 -->
+                    <div class="stat-card-group">
+                        <div class="stat-card" style="border-left: 4px solid #8957e5;">
+                            <div class="label">總存入次數</div>
+                            <div class="value" id="totalInCount">0</div>
+                        </div>
+                        <div class="stat-card" style="border-left: 4px solid #238636;">
+                            <div class="label">總存入金額</div>
+                            <div class="value" id="totalInSum">0</div>
+                        </div>
+                        <div class="stat-card" style="border-left: 4px solid #d2a8ff;">
+                            <div class="label">總轉出次數</div>
+                            <div class="value" id="totalOutCount">0</div>
+                        </div>
+                        <div class="stat-card" style="border-left: 4px solid #da3633;">
+                            <div class="label">總轉出金額</div>
+                            <div class="value" id="totalOutSum">0</div>
+                        </div>
+                    </div>
+
+                    <!-- 洗錢防制 (AML) 現金交易統計 -->
+                    <div class="stat-card-group">
+                        <div class="stat-card" style="border-left: 4px solid #3fb950;">
+                            <div class="label">現金存入次數</div>
+                            <div class="value" id="amlCashInCount">0</div>
+                        </div>
+                        <div class="stat-card" style="border-left: 4px solid #58a6ff;">
+                            <div class="label">現金存入總額</div>
+                            <div class="value" id="amlCashInSum">0</div>
+                        </div>
+                        <div class="stat-card" style="border-left: 4px solid #f85149;">
+                            <div class="label">現金/ATM 提領次數</div>
+                            <div class="value" id="amlCashOutCount">0</div>
+                        </div>
+                        <div class="stat-card" style="border-left: 4px solid #bc8cff;">
+                            <div class="label">現金/ATM 提領總額</div>
+                            <div class="value" id="amlCashOutSum">0</div>
+                        </div>
+                    </div>
+
+                    <div class="charts-container">
+                        <div class="panel" style="margin-bottom: 0;">
+                            <h3 style="margin-top:0;">📈 存入頻率 Top 5 (次數)</h3>
+                            <div id="chartInFreq" class="chart-box"></div>
+                        </div>
+                        <div class="panel" style="margin-bottom: 0;">
+                            <h3 style="margin-top:0;">📉 轉出頻率 Top 5 (次數)</h3>
+                            <div id="chartOutFreq" class="chart-box"></div>
+                        </div>
+                        <div class="panel" style="margin-bottom: 0;">
+                            <h3 style="margin-top:0;">💰 存入總金額 Top 5</h3>
+                            <div id="chartInSum" class="chart-box"></div>
+                        </div>
+                        <div class="panel" style="margin-bottom: 0;">
+                            <h3 style="margin-top:0;">💸 轉出總金額 Top 5</h3>
+                            <div id="chartOutSum" class="chart-box"></div>
+                        </div>
+                    </div>
+
+                    <!-- 桑基圖區塊 (大視覺面板) -->
+                    <div class="panel" style="margin-top: 24px;">
+                        <h3 style="margin-top:0;">🌊 帳戶資金總流向 (Sankey Diagram) <span
+                                style="font-size: 0.7em; color: var(--text-muted); font-weight: normal;">資金由左(匯入) ➔
+                                流經本專戶 ➔
+                                流向右(匯出)</span></h3>
+                        <div id="sankeyChart" style="width: 100%; height: 750px; margin-top: 15px;"></div>
+                    </div>
+                </div> <!-- End dashboard -->
+            </div> <!-- End tabSingle -->
+
+            <!-- 全域網脈 Tab -->
+            <div id="tabNetwork" style="display: none;">
+                <h2 style="margin-top:0;">🕸️ 跨帳戶全域資金網絡 (Force-Directed Graph)</h2>
+
+                <div
+                    style="display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 20px; align-items: flex-end; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
+                    <div style="display: flex; flex-direction: column;">
+                        <label style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 5px;">單線總金額下限
+                            (防雜訊)</label>
+                        <input type="number" id="netMinAmount" value="50000" step="10000"
+                            style="padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: #21262d; color: white;" />
+                    </div>
+                    <div style="display: flex; flex-direction: column;">
+                        <label style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 5px;">單線交易次數下限
+                            (防過客)</label>
+                        <input type="number" id="netMinFreq" value="2" min="1"
+                            style="padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: #21262d; color: white;" />
+                    </div>
+                    <div style="display: flex; flex-direction: column; justify-content: flex-end; margin-bottom: 10px;">
+                        <label
+                            style="display: flex; align-items: center; gap: 8px; font-size: 0.9em; color: var(--text-main); cursor: pointer;"
+                            title="自動合併跨帳本重複紀錄，並消除單純的手續費扣款">
+                            <input type="checkbox" id="enableDedupe" checked
+                                style="width: 18px; height: 18px; cursor: pointer;">
+                            ✨ 啟用智慧去重與手續費降噪
+                        </label>
+                    </div>
+                    <button id="generateNetworkBtn"
+                        style="width: auto; padding: 0 30px; height: 42px;">開始計算並渲染網脈圖</button>
+                </div>
+
+                <div style="display: flex; gap: 20px; align-items: flex-start;">
+                    <div class="panel"
+                        style="margin-bottom: 0; position: relative; flex: 1; padding: 0; overflow: hidden; border-radius: 12px;">
+                        <div
+                            style="position: absolute; top: 15px; left: 15px; z-index: 10; display: flex; flex-direction: column; gap: 8px;">
+                            <button id="zoomInBtn"
+                                style="width: 40px; height: 40px; padding: 0; font-size: 1.5em; display: flex; align-items: center; justify-content: center; background: rgba(33,38,45,0.8); border: 1px solid var(--border-color); color: white; border-radius: 8px; cursor: pointer;"
+                                title="放大">＋</button>
+                            <button id="zoomOutBtn"
+                                style="width: 40px; height: 40px; padding: 0; font-size: 1.5em; display: flex; align-items: center; justify-content: center; background: rgba(33,38,45,0.8); border: 1px solid var(--border-color); color: white; border-radius: 8px; cursor: pointer;"
+                                title="縮小">－</button>
+                        </div>
+                        <div id="networkChart" style="width: 100%; height: 850px; cursor: grab;"></div>
+                    </div>
+
+                    <!-- 右側交易明細面板 -->
+                    <div class="panel" id="edgeDetailPanel"
+                        style="width: 350px; display: none; margin-bottom: 0; flex-direction: column; max-height: 850px;">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h3 style="margin:0; color: var(--primary);" id="detailPanelTitle">連線交易明細</h3>
+                            <button onclick="document.getElementById('edgeDetailPanel').style.display='none'"
+                                style="background: transparent; border: none; font-size: 1.2em; cursor: pointer; color: var(--text-muted); padding: 0; line-height: 1;">✖</button>
+                        </div>
+
+                        <!-- 雙向明細頁籤切換 -->
+                        <div id="dirTabsContainer"
+                            style="display: flex; gap: 5px; margin-bottom: 15px; background: rgba(0,0,0,0.4); padding: 4px; border-radius: 8px;">
+                            <button id="dirTabAB" onclick="switchDirTab('AB')"
+                                style="flex: 1; padding: 6px; font-size: 0.85em; border-radius: 6px; border: none; background: var(--primary); color: white; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></button>
+                            <button id="dirTabBA" onclick="switchDirTab('BA')"
+                                style="flex: 1; padding: 6px; font-size: 0.85em; border-radius: 6px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></button>
+                        </div>
+
+                        <div
+                            style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #30363d;">
+                            <p style="font-size: 0.85em; color: var(--text-main); margin: 0; line-height: 1.6; word-break: break-all;"
+                                id="detailPanelSubtitle"></p>
+                        </div>
+                        <div style="overflow-y: auto; padding-right: 5px; flex: 1;">
+                            <ul id="detailTransactionList"
+                                style="list-style: none; padding: 0; margin: 0; display:flex; flex-direction:column; gap:10px;">
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div> <!-- End tabNetwork -->
+        </div> <!-- End mainTabsContainer -->
+
+    </div> <!-- End container -->
 
     <script>
         const dropzone = document.getElementById('dropzone');
@@ -715,6 +839,7 @@
 
             // 完成全部解析
             document.getElementById('fileListPanel').style.display = 'block';
+            document.getElementById('mainTabsContainer').style.display = 'block';
             document.getElementById('analysisPanel').style.display = 'block';
             loadAccountOptions();
         }
@@ -845,21 +970,32 @@
                         accountNameB: t.accountNameB
                     };
                 }
-                if (t.direction === 'IN') {
-                    stats[b].inCount += 1;
-                    stats[b].inSum += t.amount;
-                    gInCount += 1;
-                    gInSum += t.amount;
-                } else if (t.direction === 'OUT') {
-                    stats[b].outCount += 1;
-                    stats[b].outSum += t.amount;
-                    gOutCount += 1;
-                    gOutSum += t.amount;
+                // 手續費降噪 (過濾 15/17/30 元且含有手續費相關字眼的單獨紀錄，避免霸佔 Top 5 轉出排行榜)
+                const desc = t['交易摘要'] ? String(t['交易摘要']).trim() : '';
+                const remarks = [t['交易摘要'], t['備註'], t['摘要'], t['交易分支機構']].join(' ');
+                const amt = t.amount || 0;
+                let isFeeNoise = false;
+
+                if ((amt === 15 || amt === 17 || amt === 30) && (b === 'Unknown' || remarks.includes('手續') || remarks.includes('費'))) {
+                    isFeeNoise = true;
+                }
+
+                if (!isFeeNoise) {
+                    if (t.direction === 'IN') {
+                        stats[b].inCount += 1;
+                        stats[b].inSum += t.amount;
+                        gInCount += 1;
+                        gInSum += t.amount;
+                    } else if (t.direction === 'OUT') {
+                        stats[b].outCount += 1;
+                        stats[b].outSum += t.amount;
+                        gOutCount += 1;
+                        gOutSum += t.amount;
+                    }
                 }
 
                 // 現金交易特徵統計 (AML)
                 // 擴大特徵字眼，相容不同銀行的「現金」、「提款機」、「ATM」等字眼，但排除「轉」字 (避免 ATM轉帳 誤以為是無法追蹤的實體現金交易)
-                const desc = t['交易摘要'] ? String(t['交易摘要']).trim() : '';
                 const hasCashWord = desc.includes('現金') || desc.includes('ATM') || desc.includes('提款機') || desc.includes('現開戶') || desc.includes('提現');
                 const isTransfer = desc.includes('轉');
 
@@ -1140,10 +1276,659 @@
             charts[domId].setOption(option, true);
         }
 
+
         // 監聽視窗縮放以自適應大小
         window.addEventListener('resize', () => {
             Object.values(charts).forEach(chart => chart.resize());
         });
+
+        // 頁籤切換邏輯
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById('tabSingle').style.display = 'none';
+            document.getElementById('tabNetwork').style.display = 'none';
+
+            if (tabId === 'single') {
+                document.querySelector('.tab-btn[onclick="switchTab(\'single\')"]').classList.add('active');
+                document.getElementById('tabSingle').style.display = 'block';
+            } else {
+                document.querySelector('.tab-btn[onclick="switchTab(\'network\')"]').classList.add('active');
+                document.getElementById('tabNetwork').style.display = 'block';
+            }
+        }
+
+        // ==========================
+        // 全域網脈圖渲染邏輯 (含去重與模糊比對)
+        // ==========================
+        document.getElementById('generateNetworkBtn').addEventListener('click', async () => {
+            const minAmount = parseInt(document.getElementById('netMinAmount').value) || 0;
+            const minFreq = parseInt(document.getElementById('netMinFreq').value) || 0;
+            const isDedupeEnabled = document.getElementById('enableDedupe').checked;
+
+            const btn = document.getElementById('generateNetworkBtn');
+            btn.textContent = '計算並渲染中...(大數據量可能需要數秒)';
+            btn.disabled = true;
+
+            try {
+                // 將所有 transactions 撈出
+                const allTrans = await db.transactions.toArray();
+
+                // 先將交易依據 (Source|Target) 分組，便於進行一對一精確去重
+                const edgeGroups = {};
+
+                allTrans.forEach(t => {
+                    if (!t.accountA || !t.accountBClean) return;
+                    if (t.accountA === t.accountBClean) return; // 排除自己匯給自己
+
+                    // === 1. 手續費雜訊過濾 ===
+                    if (isDedupeEnabled) {
+                        const amt = t.amount || 0;
+                        const remarks = [t['交易摘要'], t['備註'], t['摘要'], t['交易分支機構']].join(' ');
+                        // 若為小額 15/17/30，且帳戶B未定或摘要含手續費字眼，直接視為雜訊濾除
+                        if ((amt === 15 || amt === 17 || amt === 30) && (t.accountBClean.includes('Unknown') || remarks.includes('手續') || remarks.includes('費'))) {
+                            return;
+                        }
+                    }
+
+                    // FORCE Graph 統一看成資金由 Source -> Target
+                    let source = t.accountA;
+                    let target = t.accountBClean;
+
+                    if (t.direction === 'IN') {
+                        source = t.accountBClean;
+                        target = t.accountA;
+                    }
+
+                    const key = `${source}|${target}`;
+                    if (!edgeGroups[key]) edgeGroups[key] = { ins: [], outs: [] };
+
+                    if (t.direction === 'IN') {
+                        edgeGroups[key].ins.push(t);
+                    } else {
+                        edgeGroups[key].outs.push(t);
+                    }
+                });
+
+                // 進行一對一 Fuzzy 配對與權重計算
+                const edgesMap = {};
+
+                for (let key in edgeGroups) {
+                    const group = edgeGroups[key];
+                    const ins = group.ins;
+                    const outs = group.outs;
+
+                    let validTransCount = 0;
+                    let validTransAmount = 0;
+
+                    // IN 端（入帳方）紀錄代表實際收到的錢，永遠保留為準確基準
+                    ins.forEach(inT => {
+                        validTransCount++;
+                        validTransAmount += inT.amount || 0;
+                    });
+
+                    // 處理 OUT 端：試著在 IN 端找同日、金額接近(差額<=30) 且「尚未配對」的紀錄
+                    outs.forEach(outT => {
+                        let outDateStr = (outT['交易日期'] || outT['日期'] || '').replace(/[-/]/g, '').substring(0, 8);
+                        let outAmt = outT.amount || 0;
+                        let isMatched = false;
+
+                        if (isDedupeEnabled) {
+                            for (let i = 0; i < ins.length; i++) {
+                                let inT = ins[i];
+                                if (inT._matched) continue; // 這筆 IN 已經跟某筆 OUT 配對過了
+
+                                let inDateStr = (inT['交易日期'] || inT['日期'] || '').replace(/[-/]/g, '').substring(0, 8);
+                                if (inDateStr === outDateStr && Math.abs(outAmt - (inT.amount || 0)) <= 30) {
+                                    inT._matched = true; // 標記配對成功 (消耗掉這筆 IN)
+                                    isMatched = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // 如果沒找到配對（或許 Target 沒有上傳 CSV，或真的是另一筆獨立交易），則將這筆 OUT 計算進去
+                        if (!isMatched) {
+                            validTransCount++;
+                            validTransAmount += outAmt;
+                        }
+                    });
+
+                    if (validTransCount > 0) {
+                        edgesMap[key] = {
+                            amount: validTransAmount,
+                            count: validTransCount
+                        };
+                    }
+                }
+
+                // === 4. 根據雙向配對狀況產生 Links (合併雙向邊線) ===
+                const validEdges = Object.keys(edgesMap).map(k => {
+                    const [s, t] = k.split('|');
+                    return { source: s, target: t, ...edgesMap[k] };
+                }).filter(e => e.amount >= minAmount && e.count >= minFreq);
+
+                // 收集出現在有效連線上的 Node
+                const nodeKeys = new Set();
+                validEdges.forEach(e => {
+                    nodeKeys.add(e.source);
+                    nodeKeys.add(e.target);
+                });
+
+                // 檢查是否為「雙向交易」 (即 source->target 與 target->source 都在有效範圍內)
+                const finalLinks = [];
+                const addedPairs = new Set();
+
+                validEdges.forEach(e => {
+                    const pairKey1 = `${e.source}|${e.target}`;
+                    const pairKey2 = `${e.target}|${e.source}`;
+
+                    if (addedPairs.has(pairKey1) || addedPairs.has(pairKey2)) return; // 若此配對已處理(雙向合併)過則跳過
+
+                    const reverseEdge = validEdges.find(r => r.source === e.target && r.target === e.source);
+
+                    if (reverseEdge) {
+                        // 雙向都有，合併計算總額與頻率，並標記為雙向邊線 (Bi-directional)
+                        finalLinks.push({
+                            source: e.source,
+                            target: e.target,
+                            amount: e.amount + reverseEdge.amount,
+                            count: e.count + reverseEdge.count,
+                            isBidirectional: true
+                        });
+                        addedPairs.add(pairKey2);
+                    } else {
+                        // 單向交易
+                        finalLinks.push({
+                            source: e.source,
+                            target: e.target,
+                            amount: e.amount,
+                            count: e.count,
+                            isBidirectional: false
+                        });
+                    }
+                    addedPairs.add(pairKey1);
+                });
+
+                // 計算每個node在過濾後Edge中的總吞吐量來決定圓圈大小
+                const nodeVolume = {};
+                validEdges.forEach(e => {
+                    if (!nodeVolume[e.source]) nodeVolume[e.source] = 0;
+                    if (!nodeVolume[e.target]) nodeVolume[e.target] = 0;
+                    nodeVolume[e.source] += e.amount;
+                    nodeVolume[e.target] += e.amount;
+                });
+
+                // 取回 Nodes 詳細資訊並格式化
+                const nodesData = [];
+                for (let acc of nodeKeys) {
+                    const record = await db.accounts.get(acc);
+                    let name = acc;
+                    let isDict = false;
+                    let nodeColor = '#58a6ff'; // 預設藍色：一般從帳戶提取出的明細
+
+                    if (record) {
+                        let bk = record['銀行代碼'] ? String(record['銀行代碼']).trim() : '';
+                        if (TAIWAN_BANKS[bk]) bk = TAIWAN_BANKS[bk];
+                        if (record['戶名']) {
+                            name = `[${bk || '未知'}] ${record['戶名']}\n(${acc})`;
+                            isDict = true;
+                        }
+                    }
+
+                    // 節點大小使用對數比例縮放，避免極端大戶掩蓋小戶
+                    let baseLog = Math.log10(nodeVolume[acc] || 1);
+                    // 讓圈圈至少維持 15，最大不超過 70
+                    let symbolSize = Math.max(15, Math.min(70, baseLog * 7));
+
+                    nodesData.push({
+                        id: acc,
+                        name: name,
+                        symbolSize: symbolSize,
+                        itemStyle: {
+                            color: isDict ? '#f85149' : '#58a6ff', // 若為字典戶名則標紅
+                            borderColor: '#ffffff',
+                            borderWidth: isDict ? 2 : 1
+                        },
+                        draggable: true // 開啟節點可拖曳
+                    });
+                }
+
+                renderNetworkChart('networkChart', nodesData, finalLinks);
+            } catch (e) {
+                console.error(e);
+                alert('渲染失敗: ' + e.message);
+            } finally {
+                btn.textContent = '開始計算並渲染網脈圖';
+                btn.disabled = false;
+            }
+        });
+
+        let currentZoom = 1;
+
+        document.getElementById('zoomInBtn').addEventListener('click', () => {
+            if (window.cyNetwork) {
+                window.cyNetwork.zoom(window.cyNetwork.zoom() * 1.25);
+            }
+        });
+
+        document.getElementById('zoomOutBtn').addEventListener('click', () => {
+            if (window.cyNetwork) {
+                window.cyNetwork.zoom(window.cyNetwork.zoom() / 1.25);
+            }
+        });
+
+        // 取消 ECharts wheel zoom 事件 (因為 Cytoscape 預設就內建完美的滑鼠縮放與平移)
+        /* document.getElementById('networkChart').addEventListener('wheel', () => { ... }); */
+
+        function renderNetworkChart(domId, nodes, edges) {
+            const elements = [];
+
+            if (nodes.length === 0) {
+                if (window.cyNetwork) {
+                    window.cyNetwork.destroy();
+                    window.cyNetwork = null;
+                }
+                alert('無符合過濾條件的資料，請嘗試降低過濾門檻（金額/次數）');
+                return;
+            }
+
+            nodes.forEach(n => {
+                elements.push({
+                    data: {
+                        id: n.id,
+                        label: n.name,
+                        fullName: n.name,
+                        size: n.symbolSize,
+                        color: n.itemStyle.color,
+                        borderColor: n.itemStyle.borderColor,
+                        borderWidth: n.itemStyle.borderWidth
+                    }
+                });
+            });
+
+            edges.forEach(e => {
+                let eAmount = e.amount || e.value;
+                let width = Math.max(1.5, Math.min(15, (Math.log10(eAmount || 1) - 3) + (e.count * 0.15)));
+                elements.push({
+                    data: {
+                        id: 'e_' + e.source + '_' + e.target,
+                        source: e.source,
+                        target: e.target,
+                        amount: eAmount,
+                        count: e.count,
+                        isBidi: e.isBidirectional || e.isBidi,
+                        width: width
+                    }
+                });
+            });
+
+            if (window.cyNetwork) {
+                window.cyNetwork.destroy();
+            }
+
+            window.cyNetwork = cytoscape({
+                container: document.getElementById(domId),
+                elements: elements,
+                style: [
+                    {
+                        selector: 'node',
+                        style: {
+                            'label': 'data(label)',
+                            'width': 'data(size)',
+                            'height': 'data(size)',
+                            'background-color': 'data(color)',
+                            'border-color': 'data(borderColor)',
+                            'border-width': 'data(borderWidth)',
+                            'color': '#fff',
+                            'font-size': '12px',
+                            'text-valign': 'top',
+                            'text-halign': 'center',
+                            'text-outline-color': '#0d1117',
+                            'text-outline-width': 2,
+                            'text-wrap': 'wrap',
+                            'text-max-width': '150px'
+                        }
+                    },
+                    {
+                        selector: 'edge',
+                        style: {
+                            'width': 'data(width)',
+                            'line-color': '#666',
+                            'target-arrow-color': '#666',
+                            'target-arrow-shape': 'triangle',
+                            'curve-style': 'bezier',
+                            'opacity': 0.6
+                        }
+                    },
+                    {
+                        selector: 'edge[isBidi]',
+                        style: {
+                            'source-arrow-shape': 'triangle',
+                            'source-arrow-color': '#666',
+                            'curve-style': 'straight'
+                        }
+                    },
+                    {
+                        selector: 'node:selected',
+                        style: {
+                            'border-width': 4,
+                            'border-color': '#fff',
+                            'opacity': 1
+                        }
+                    },
+                    {
+                        selector: 'edge:selected',
+                        style: {
+                            'line-color': '#fff',
+                            'target-arrow-color': '#fff',
+                            'source-arrow-color': '#fff',
+                            'opacity': 1,
+                            'z-index': 999
+                        }
+                    },
+                    {
+                        selector: 'node.dim, edge.dim',
+                        style: {
+                            'opacity': 0.1,
+                            'z-index': 1
+                        }
+                    },
+                    {
+                        selector: 'node.highlight, edge.highlight',
+                        style: {
+                            'opacity': 1,
+                            'z-index': 999
+                        }
+                    }
+                ],
+                layout: {
+                    name: 'concentric',
+                    fit: true,
+                    padding: 30,
+                    startAngle: 3 / 2 * Math.PI, // 從 12 點鐘方向開始
+                    sweep: undefined,
+                    clockwise: true,
+                    equidistant: false, // 讓層級距離因連結緊密度而變化
+                    minNodeSpacing: 30, // 避免節點太擁擠
+                    boundingBox: undefined,
+                    avoidOverlap: true,
+                    nodeDimensionsIncludeLabels: true,
+                    // 根據節點的 degree (連接數) 來決定它的中心程度
+                    concentric: function (node) {
+                        return node.degree(); // 連結越多的節點，數值越高中間越內層
+                    },
+                    // 將 degree 分為多少個層次 (數值越小，同心圓層次越多)
+                    levelWidth: function (nodes) {
+                        return nodes.maxDegree() / 4;
+                    },
+                    animate: false
+                }
+            });
+
+            // 實作 Click
+            window.cyNetwork.on('tap', 'edge', function (evt) {
+                var edge = evt.target;
+                showEdgeDetails(edge.data('source'), edge.data('target'));
+            });
+
+            // 實作 Tooltip (滑鼠移入時建立絕對定位 Div)
+            let tooltip = document.getElementById('cyTooltip');
+            if (!tooltip) {
+                tooltip = document.createElement('div');
+                tooltip.id = 'cyTooltip';
+                tooltip.style.position = 'absolute';
+                tooltip.style.background = 'rgba(22, 27, 34, 0.9)';
+                tooltip.style.border = '1px solid #30363d';
+                tooltip.style.padding = '10px';
+                tooltip.style.borderRadius = '5px';
+                tooltip.style.color = '#fff';
+                tooltip.style.fontSize = '12px';
+                tooltip.style.pointerEvents = 'none';
+                tooltip.style.display = 'none';
+                tooltip.style.zIndex = '9999';
+                document.body.appendChild(tooltip);
+            }
+
+            window.cyNetwork.on('mousemove', 'node, edge', function (evt) {
+                tooltip.style.display = 'block';
+                tooltip.style.left = (evt.originalEvent.pageX + 15) + 'px';
+                tooltip.style.top = (evt.originalEvent.pageY + 15) + 'px';
+
+                let ele = evt.target;
+                if (ele.isNode()) {
+                    tooltip.innerHTML = `<b>${ele.data('fullName').replace('\\n', '<br/>')}</b><br/>連線總吞吐量標度: $${(ele.data('size')).toFixed(0)}`;
+
+                    // 啟動 1st-degree (第一層關聯) 高亮
+                    // 取得自身與相鄰的邊和節點
+                    var neighborhood = ele.neighborhood().add(ele);
+                    // 將所有的元件全加上 dim 類別變暗
+                    window.cyNetwork.elements().addClass('dim').removeClass('highlight');
+                    // 再將第一層關聯元件加上 highlight
+                    neighborhood.removeClass('dim').addClass('highlight');
+
+                } else if (ele.isEdge()) {
+                    const dirIcon = ele.data('isBidi') ? '⬅ 雙向匯款 ➡' : '⬇ 單向匯出 ⬇';
+                    tooltip.innerHTML = `<b>${ele.data('source')}</b><br/>${dirIcon}<br/><b>${ele.data('target')}</b><br/><br/>共交易 ${ele.data('count')} 次<br/>累積達: <b>$${ele.data('amount').toLocaleString()}</b><br/><span style="color:#aaa; font-size:0.8em;">💡 點擊連線可查看右側詳細交易清單</span>`;
+
+                    // 滑鼠摸到 Edge 時，高亮該 Edge 及兩端的 Node
+                    var connectedNodes = ele.connectedNodes().add(ele);
+                    window.cyNetwork.elements().addClass('dim').removeClass('highlight');
+                    connectedNodes.removeClass('dim').addClass('highlight');
+                }
+            });
+
+            window.cyNetwork.on('mouseout', 'node, edge', function (evt) {
+                tooltip.style.display = 'none';
+
+                // 取消所有高亮與暗化效果
+                window.cyNetwork.elements().removeClass('dim').removeClass('highlight');
+            });
+        }
+
+        // 供明細側欄保存當前正檢視的 AB 兩端資訊與交易清單全集
+        let currentDetailState = {
+            source: '',
+            target: '',
+            transAB: [], // A -> B
+            transBA: [], // B -> A
+            activeTab: 'AB'
+        };
+
+        async function showEdgeDetails(sourceAcc, targetAcc) {
+            const panel = document.getElementById('edgeDetailPanel');
+            const subtitle = document.getElementById('detailPanelSubtitle');
+            const list = document.getElementById('detailTransactionList');
+
+            panel.style.display = 'flex';
+
+            // 處理標題縮寫
+            const sNameShort = sourceAcc.length > 8 ? sourceAcc.substring(0, 8) + '...' : sourceAcc;
+            const tNameShort = targetAcc.length > 8 ? targetAcc.substring(0, 8) + '...' : targetAcc;
+
+            document.getElementById('dirTabAB').innerHTML = `🔹 ${sNameShort} < br >➔ ${tNameShort}`;
+            document.getElementById('dirTabBA').innerHTML = `🔸 ${tNameShort} < br >➔ ${sNameShort}`;
+
+            subtitle.innerHTML = `⏳ 載入詳細紀錄中...`;
+            list.innerHTML = '';
+
+            const allTrans = await db.transactions.toArray();
+            const specificTrans = allTrans.filter(t => {
+                const isForward = (t.accountA === sourceAcc && t.accountBClean === targetAcc);
+                const isReverse = (t.accountA === targetAcc && t.accountBClean === sourceAcc);
+                return isForward || isReverse;
+            });
+
+            const isDedupeEnabled = document.getElementById('enableDedupe') ? document.getElementById('enableDedupe').checked : true;
+
+            // 輔助函式：判斷該筆交易相對於連線是處於 AB 還是 BA 流向
+            function getFlowDirection(t) {
+                if (t.accountA === sourceAcc && t.direction === 'OUT') return 'AB';
+                if (t.accountA === targetAcc && t.direction === 'IN') return 'AB';
+                if (t.accountA === sourceAcc && t.direction === 'IN') return 'BA';
+                if (t.accountA === targetAcc && t.direction === 'OUT') return 'BA';
+                return 'UNKNOWN';
+            }
+
+            let retainedTrans = [];
+
+            if (isDedupeEnabled) {
+                // 將雙向金流切開，各自去重，以免互相干擾吃掉對方的資料
+                const flowAB = specificTrans.filter(t => getFlowDirection(t) === 'AB');
+                const flowBA = specificTrans.filter(t => getFlowDirection(t) === 'BA');
+
+                function dedupeFlow(flow) {
+                    const ins = [];
+                    const outs = [];
+                    flow.forEach(t => {
+                        const amt = t.amount || 0;
+                        const remarks = [t['交易摘要'], t['備註'], t['摘要'], t['交易分支機構']].join(' ');
+                        // 手續費雜訊過濾
+                        if ((amt === 15 || amt === 17 || amt === 30) && (t.accountBClean.includes('Unknown') || remarks.includes('手續') || remarks.includes('費'))) {
+                            return;
+                        }
+                        if (t.direction === 'IN') ins.push(t);
+                        else outs.push(t);
+                    });
+
+                    // 針對同一個方向的金流，以 IN (入帳存摺) 為準
+                    ins.forEach(t => t._matched = false);
+                    let retained = [...ins];
+
+                    outs.forEach(outT => {
+                        let outDateStr = (outT['交易日期'] || outT['日期'] || '').replace(/[-/]/g, '').substring(0, 8);
+                        let outAmt = outT.amount || 0;
+
+                        let matchIndex = ins.findIndex(inT => {
+                            if (inT._matched) return false;
+                            let inDateStr = (inT['交易日期'] || inT['日期'] || '').replace(/[-/]/g, '').substring(0, 8);
+                            return inDateStr === outDateStr && Math.abs(outAmt - (inT.amount || 0)) <= 30;
+                        });
+
+                        if (matchIndex !== -1) {
+                            ins[matchIndex]._matched = true; // 配對成功，標記並消耗
+                        } else {
+                            retained.push(outT); // 沒配對到，這筆 OUT 是獨立的
+                        }
+                    });
+                    return retained;
+                }
+
+                retainedTrans.push(...dedupeFlow(flowAB));
+                retainedTrans.push(...dedupeFlow(flowBA));
+            } else {
+                retainedTrans = specificTrans;
+            }
+
+            // 依據時間降冪排序
+            retainedTrans.sort((a, b) => new Date(b['交易日期'] || b['日期'] || 0) - new Date(a['交易日期'] || a['日期'] || 0));
+
+            // 分流 AB 與 BA
+            const transAB = [];
+            const transBA = [];
+            retainedTrans.forEach(t => {
+                const dir = getFlowDirection(t);
+                if (dir === 'AB') transAB.push(t);
+                else if (dir === 'BA') transBA.push(t);
+            });
+
+            // 更新全域狀態供 Tab 切換使用
+            currentDetailState = {
+                source: sourceAcc,
+                target: targetAcc,
+                transAB: transAB,
+                transBA: transBA,
+                activeTab: 'AB'
+            };
+
+            // 檢查有沒有 BA 交易，若有則顯示雙頁籤，沒有則隱藏 BA 頁籤
+            if (transBA.length > 0) {
+                document.getElementById('dirTabsContainer').style.display = 'flex';
+                // 預防 AB 為空 (只有單向匯回) 的特例
+                if (transAB.length === 0) currentDetailState.activeTab = 'BA';
+            } else {
+                document.getElementById('dirTabsContainer').style.display = 'none';
+                currentDetailState.activeTab = 'AB';
+            }
+
+            renderDetailList();
+        }
+
+        // 頁籤切換事件
+        window.switchDirTab = function (tab) {
+            currentDetailState.activeTab = tab;
+            renderDetailList();
+        };
+
+        function renderDetailList() {
+            const list = document.getElementById('detailTransactionList');
+            const subtitle = document.getElementById('detailPanelSubtitle');
+
+            // 更新按鈕樣式
+            const btnAB = document.getElementById('dirTabAB');
+            const btnBA = document.getElementById('dirTabBA');
+
+            if (currentDetailState.activeTab === 'AB') {
+                btnAB.style.background = 'var(--primary)';
+                btnAB.style.color = 'white';
+                btnBA.style.background = 'transparent';
+                btnBA.style.color = 'var(--text-muted)';
+            } else {
+                btnBA.style.background = '#f85149';
+                btnBA.style.color = 'white';
+                btnAB.style.background = 'transparent';
+                btnAB.style.color = 'var(--text-muted)';
+            }
+
+            // 決定要渲染哪個陣列
+            const activeData = currentDetailState.activeTab === 'AB' ? currentDetailState.transAB : currentDetailState.transBA;
+            const fromAcc = currentDetailState.activeTab === 'AB' ? currentDetailState.source : currentDetailState.target;
+            const toAcc = currentDetailState.activeTab === 'AB' ? currentDetailState.target : currentDetailState.source;
+            const borderColor = currentDetailState.activeTab === 'AB' ? '#58a6ff' : '#f85149';
+
+            const totalAmount = activeData.reduce((sum, current) => sum + (current.amount || 0), 0);
+
+            subtitle.innerHTML = `出帳: <span style="color:#aaa">${fromAcc}</span><br>入帳: <span style="color:#aaa">${toAcc}</span><br>------------------------<br>共計 <b>${activeData.length}</b> 筆紀錄<br>單向總流金: <b style="color:var(--primary); font-size:1.1em;">$${totalAmount.toLocaleString()}</b>`;
+
+            list.innerHTML = '';
+
+            if (activeData.length === 0) {
+                list.innerHTML = '<li style="color:#888;">無內部明細紀錄 (僅從第三方檔案解析推斷)</li>';
+                return;
+            }
+
+            activeData.forEach(t => {
+                const li = document.createElement('li');
+                li.style.background = 'rgba(22, 27, 34, 0.8)';
+                li.style.padding = '12px';
+                li.style.borderRadius = '8px';
+                li.style.borderLeft = `4px solid ${borderColor}`;
+                li.style.border = '1px solid #30363d';
+
+                const date = t['交易日期'] || t['日期'] || '未知日期';
+                const time = t['交易時間'] || t['時間'] || '';
+                const dateTimeStr = time ? `${date} ${time}` : date;
+
+                const amt = t.amount ? t.amount.toLocaleString() : '0';
+                const remarks = [t['交易摘要'], t['備註'], t['摘要'], t['交易分支機構']].filter(Boolean).join(' | ');
+
+                const sLabel = fromAcc;
+                const tLabel = toAcc;
+
+                li.innerHTML = `<div style="display:flex; flex-direction:column; gap:5px;">
+                        <span style="font-size: 0.8em; color: var(--text-muted);">${dateTimeStr}</span>
+                        <div style="display:flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size: 0.85em; color: #8b949e;">${sLabel.substring(0, 8)}...</span>
+                            <span style="color:var(--text-muted);"> ➔ </span>
+                            <span style="font-size: 1.15em; font-weight: bold; color: var(--text-main);">$ ${amt}</span>
+                            <span style="color:var(--text-muted);"> ➔ </span>
+                            <span style="font-size: 0.85em; color: #8b949e;">${tLabel.substring(0, 8)}...</span>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.9em; color: #bc8cff; line-height: 1.4; word-break: break-all; margin-top:5px;">${remarks || '無摘要'}</div>`;
+                list.appendChild(li);
+            });
+        }
+
 
     </script>
 </body>
