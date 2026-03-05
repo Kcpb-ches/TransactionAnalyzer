@@ -14,6 +14,19 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- 引入 Cytoscape.js 用於極致順暢的本機圖論關聯網路分析 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <!-- 引入 Dagre 與 Cytoscape-Dagre 用於緊密的階層流向排版 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dagre/0.8.5/dagre.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.min.js"></script>
+    <!-- 引入 AVSDF 用於防打結圓環型排版 (需要 layout-base 與 avsdf-base 作為依賴) -->
+    <script src="https://unpkg.com/layout-base/layout-base.js"></script>
+    <script src="https://unpkg.com/avsdf-base/avsdf-base.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape-avsdf@1.0.0/cytoscape-avsdf.min.js"></script>
+    <script>
+        // 註冊擴充排版引擎至 Cytoscape
+        if (typeof cytoscapeDagre !== 'undefined' && typeof cytoscape !== 'undefined') {
+            cytoscape.use(cytoscapeDagre);
+        }
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -433,6 +446,18 @@
                             ✨ 啟用智慧去重與手續費降噪
                         </label>
                     </div>
+
+                    <div style="display: flex; flex-direction: column;">
+                        <label style="font-size: 0.9em; color: var(--text-muted); margin-bottom: 5px;">選擇排版演算法</label>
+                        <select id="layoutSelect"
+                            style="padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); background: #21262d; color: white; cursor: pointer;">
+                            <option value="dagre" selected>🌲 Dagre (有向無環階層，由上至下)</option>
+                            <option value="concentric">🎯 Concentric (同心圓向心，核心樞紐置中)</option>
+                            <option value="cose">🕸️ Cose (傳統力導向，物理引力網)</option>
+                            <option value="avsdf">⭕ AVSDF (防打結大圓環，專解密集互轉)</option>
+                        </select>
+                    </div>
+
                     <button id="generateNetworkBtn"
                         style="width: auto; padding: 0 30px; height: 42px;">開始計算並渲染網脈圖</button>
                 </div>
@@ -1520,6 +1545,73 @@
         // 取消 ECharts wheel zoom 事件 (因為 Cytoscape 預設就內建完美的滑鼠縮放與平移)
         /* document.getElementById('networkChart').addEventListener('wheel', () => { ... }); */
 
+        // 各式 Cytoscape 排版演算法配置庫
+        const LAYOUT_CONFIGS = {
+            dagre: {
+                name: 'dagre',
+                rankDir: 'TB',
+                nodeSep: 60,
+                rankSep: 80,
+                padding: 30,
+                fit: true,
+                animate: true,
+                animationDuration: 500
+            },
+            avsdf: {
+                name: 'avsdf',
+                nodeSeparation: 60,
+                animate: 'end',
+                animationDuration: 500,
+                fit: true,
+                padding: 30
+            },
+            concentric: {
+                name: 'concentric',
+                fit: true,
+                padding: 30,
+                startAngle: 3 / 2 * Math.PI,
+                sweep: undefined,
+                clockwise: true,
+                equidistant: false,
+                minNodeSpacing: 30,
+                boundingBox: undefined,
+                avoidOverlap: true,
+                nodeDimensionsIncludeLabels: true,
+                concentric: function (node) { return node.degree(); },
+                levelWidth: function (nodes) { return nodes.maxDegree() / 4; },
+                animate: true,
+                animationDuration: 500
+            },
+            cose: {
+                name: 'cose',
+                idealEdgeLength: 100,
+                nodeOverlap: 20,
+                refresh: 20,
+                fit: true,
+                padding: 30,
+                randomize: true,
+                componentSpacing: 100,
+                nodeRepulsion: 400000,
+                edgeElasticity: 100,
+                nestingFactor: 5,
+                gravity: 80,
+                numIter: 1000,
+                initialTemp: 200,
+                coolingFactor: 0.95,
+                minTemp: 1.0,
+                animate: false
+            }
+        };
+
+        // 當下拉選單變更時，立即要求 Cytoscape 套用新的版型並撥放動畫
+        document.getElementById('layoutSelect').addEventListener('change', (e) => {
+            if (window.cyNetwork) {
+                const layoutName = e.target.value;
+                const layoutConfig = LAYOUT_CONFIGS[layoutName];
+                window.cyNetwork.layout(layoutConfig).run();
+            }
+        });
+
         function renderNetworkChart(domId, nodes, edges) {
             const elements = [];
 
@@ -1641,34 +1733,37 @@
                         }
                     }
                 ],
-                layout: {
-                    name: 'concentric',
-                    fit: true,
-                    padding: 30,
-                    startAngle: 3 / 2 * Math.PI, // 從 12 點鐘方向開始
-                    sweep: undefined,
-                    clockwise: true,
-                    equidistant: false, // 讓層級距離因連結緊密度而變化
-                    minNodeSpacing: 30, // 避免節點太擁擠
-                    boundingBox: undefined,
-                    avoidOverlap: true,
-                    nodeDimensionsIncludeLabels: true,
-                    // 根據節點的 degree (連接數) 來決定它的中心程度
-                    concentric: function (node) {
-                        return node.degree(); // 連結越多的節點，數值越高中間越內層
-                    },
-                    // 將 degree 分為多少個層次 (數值越小，同心圓層次越多)
-                    levelWidth: function (nodes) {
-                        return nodes.maxDegree() / 4;
-                    },
-                    animate: false
-                }
+                layout: Object.assign({}, LAYOUT_CONFIGS[document.getElementById('layoutSelect').value], { animate: false }) // 初次渲染不需動畫
             });
 
-            // 實作 Click
-            window.cyNetwork.on('tap', 'edge', function (evt) {
-                var edge = evt.target;
-                showEdgeDetails(edge.data('source'), edge.data('target'));
+            // 用於記錄當前被「點擊鎖定 (恆亮)」的元件
+            let lockedElement = null;
+
+            // 實作 Click (Tap)
+            window.cyNetwork.on('tap', function (evt) {
+                let ele = evt.target;
+
+                // 點擊事件發生在背景空白處 (非 node / edge)
+                if (ele === window.cyNetwork) {
+                    lockedElement = null;
+                    window.cyNetwork.elements().removeClass('dim').removeClass('highlight');
+                    return;
+                }
+
+                // 點擊到 node 或 edge，設定為鎖定高亮狀態
+                lockedElement = ele;
+
+                if (ele.isEdge()) {
+                    showEdgeDetails(ele.data('source'), ele.data('target'));
+
+                    var connectedNodes = ele.connectedNodes().add(ele);
+                    window.cyNetwork.elements().addClass('dim').removeClass('highlight');
+                    connectedNodes.removeClass('dim').addClass('highlight');
+                } else if (ele.isNode()) {
+                    var neighborhood = ele.neighborhood().add(ele);
+                    window.cyNetwork.elements().addClass('dim').removeClass('highlight');
+                    neighborhood.removeClass('dim').addClass('highlight');
+                }
             });
 
             // 實作 Tooltip (滑鼠移入時建立絕對定位 Div)
@@ -1695,21 +1790,23 @@
                 tooltip.style.top = (evt.originalEvent.pageY + 15) + 'px';
 
                 let ele = evt.target;
+
                 if (ele.isNode()) {
                     tooltip.innerHTML = `<b>${ele.data('fullName').replace('\\n', '<br/>')}</b><br/>連線總吞吐量標度: $${(ele.data('size')).toFixed(0)}`;
-
-                    // 啟動 1st-degree (第一層關聯) 高亮
-                    // 取得自身與相鄰的邊和節點
-                    var neighborhood = ele.neighborhood().add(ele);
-                    // 將所有的元件全加上 dim 類別變暗
-                    window.cyNetwork.elements().addClass('dim').removeClass('highlight');
-                    // 再將第一層關聯元件加上 highlight
-                    neighborhood.removeClass('dim').addClass('highlight');
-
                 } else if (ele.isEdge()) {
                     const dirIcon = ele.data('isBidi') ? '⬅ 雙向匯款 ➡' : '⬇ 單向匯出 ⬇';
                     tooltip.innerHTML = `<b>${ele.data('source')}</b><br/>${dirIcon}<br/><b>${ele.data('target')}</b><br/><br/>共交易 ${ele.data('count')} 次<br/>累積達: <b>$${ele.data('amount').toLocaleString()}</b><br/><span style="color:#aaa; font-size:0.8em;">💡 點擊連線可查看右側詳細交易清單</span>`;
+                }
 
+                // 如果已經有被「點擊鎖定」的元件，則不要被普通的 hover 蓋過高亮狀態
+                if (lockedElement) return;
+
+                if (ele.isNode()) {
+                    // 啟動 1st-degree (第一層關聯) 高亮
+                    var neighborhood = ele.neighborhood().add(ele);
+                    window.cyNetwork.elements().addClass('dim').removeClass('highlight');
+                    neighborhood.removeClass('dim').addClass('highlight');
+                } else if (ele.isEdge()) {
                     // 滑鼠摸到 Edge 時，高亮該 Edge 及兩端的 Node
                     var connectedNodes = ele.connectedNodes().add(ele);
                     window.cyNetwork.elements().addClass('dim').removeClass('highlight');
@@ -1719,6 +1816,9 @@
 
             window.cyNetwork.on('mouseout', 'node, edge', function (evt) {
                 tooltip.style.display = 'none';
+
+                // 如果有被「點擊鎖定」的元件，移開滑鼠時不要取消高亮
+                if (lockedElement) return;
 
                 // 取消所有高亮與暗化效果
                 window.cyNetwork.elements().removeClass('dim').removeClass('highlight');
